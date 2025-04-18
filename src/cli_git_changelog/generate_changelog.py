@@ -1,4 +1,5 @@
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Union
 from cli_git_changelog.utils.logger import get_logger
 from pathlib import Path
@@ -67,16 +68,32 @@ def configure_output_dirs(output_dir: Path):
     return commits_out, batch_out
 
 
-def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, Path], info: dict, sha: str):
+def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, Path], info: dict, sha: str, concurrency: bool = False):
     file_prompts = build_file_change_prompts(info)
     file_summaries: Dict[str, str] = {}
     file_paths = list(info["files"].keys())
 
-    for idx, prompt in enumerate(file_prompts):
-        summary = call_ai(LLM_model, prompt)
-        if summary is not None:
-            file_summaries[file_paths[idx]] = summary
-            logger.info(f"File {file_paths[idx]} summary: {summary}")
+    if concurrency:
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {
+                executor.submit(call_ai, LLM_model, prompt): idx
+                for idx, prompt in enumerate(file_prompts)
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    summary = future.result()
+                    if summary is not None:
+                        file_summaries[file_paths[idx]] = summary
+                        logger.info(f"File {file_paths[idx]} summary: {summary}")
+                except Exception as e:
+                    logger.error(f"Failed to summarize {file_paths[idx]}: {e}")
+    else:
+        for idx, prompt in enumerate(file_prompts):
+            summary = call_ai(LLM_model, prompt)
+            if summary is not None:
+                file_summaries[file_paths[idx]] = summary
+                logger.info(f"File {file_paths[idx]} summary: {summary}")
 
     commit_prompt = build_changelog_prompt(file_summaries)
     commit_summary = call_ai(LLM_model, commit_prompt)
@@ -87,7 +104,7 @@ def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, P
     return None
 
 
-def create_changelog(api_key: str, model: str, working_directory: str, output_dir: Path, n_commits: int):
+def create_changelog(api_key: str, model: str, working_directory: str, output_dir: Path, n_commits: int, concurrency: bool):
     try:
         commits = get_git_commits(n_commits, working_directory)
     except RuntimeError as e:
@@ -98,11 +115,27 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
     commit_summaries: List[str] = []
     shas = list(commits.keys())
     LLM_model = get_model(api_url=API_URL, api_key=api_key, model=model)
-    for sha in shas:
-        info = commits[sha]
-        commit_summary = create_commit_changelog(LLM_model, commits_out, info, sha)
-        if commit_summary is not None:
-            commit_summaries.append(commit_summary)
+    logger.warning(f"Concurrency: {concurrency}")
+    if concurrency:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_to_sha = {
+                executor.submit(create_commit_changelog, LLM_model, commits_out, commits[sha], sha, concurrency): sha
+                for sha in shas
+            }
+            for future in as_completed(future_to_sha):
+                sha = future_to_sha[future]
+                try:
+                    commit_summary = future.result()  # <-- You forgot this line
+                    if commit_summary is not None:
+                        commit_summaries.append(commit_summary)
+                except Exception as e:
+                    logger.error(f"Error creating commit summary for {sha}: {e}")
+    else:
+        for sha in shas:
+            info = commits[sha]
+            commit_summary = create_commit_changelog(LLM_model, commits_out, info, sha)
+            if commit_summary is not None:
+                commit_summaries.append(commit_summary)
 
     first_sha, last_sha = shas[0], shas[-1]
     batch_prompt = build_full_commit_batch_changelog_prompt(commit_summaries)

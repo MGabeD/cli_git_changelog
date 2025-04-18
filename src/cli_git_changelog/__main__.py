@@ -1,4 +1,5 @@
 import argparse
+import time
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -31,6 +32,8 @@ def parse_args():
                         help="Quiet mode, no terminal logging")
     parser.add_argument("--dotenv-path", type=str,
                         help="Path to the .env file")
+    parser.add_argument("--disable-concurency", action="store_true",
+                        help="Disable concurency")
     return parser.parse_args()
 
 def main():
@@ -42,7 +45,8 @@ def main():
     # Mutes logging
     if args.quiet:
         os.environ["QUIET_MODE"] = "true"
-        
+
+    concurrency = not args.disable_concurency
     wd = args.wd_override 
     dotenv_path = Path(args.dotenv_path or wd + "/.env")
     load_dotenv(dotenv_path)
@@ -64,7 +68,10 @@ def main():
     logger.info(f"Outputing to directory: {output_dir}")
 
     # No error handling here - they'll all just be dumped and I get no improved signal from catching here
-    create_changelog(api_key, model, wd, output_dir, n_commits)
+    start_time = time.time()
+    create_changelog(api_key, model, wd, output_dir, n_commits, concurrency)
+    end_time = time.time()
+    logger.error(f"Time taken: {end_time - start_time} seconds")
 
 if __name__ == "__main__":
     main()
