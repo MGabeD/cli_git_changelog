@@ -53,12 +53,15 @@ def main():
     if any(i is None for i in [wd, model, api_key, n_commits]):
         raise ValueError("Missing required arguments")
     # I chose to do this way so I don't pollute my other projects in testing this
-    output_dir = Path(args.output_dir) if args.output_dir else resolve_component_dirs_path("changelogs")
+    # output_dir = Path(args.output_dir) if args.output_dir else resolve_component_dirs_path("changelogs")
+
+    # Changing this to a real module I can use in other projects so time to move past this to wherever someone is in their terminal
+    output_dir = Path(args.output_dir) if args.output_dir else Path(wd + "/changelogs")
     output_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Outputing to directory: {output_dir}")
+
     # No error handling here - they'll all just be dumped and I get no improved signal from catching here
     create_changelog(api_key, model, wd, output_dir, n_commits)
 
 if __name__ == "__main__":
-    logger.info("Starting CLI application")
-    logger.info(f"resolve_project_source: {resolve_project_source()}")
     main()

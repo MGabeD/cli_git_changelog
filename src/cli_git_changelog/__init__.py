@@ -37,7 +37,3 @@ load_dotenv(DOTENV_PATH)
 API_KEY = os.getenv("API_KEY")
 BASE_URL = os.getenv("BASE_URL", "")
 BASE_MODEL = os.getenv("BASE_MODEL", "claude-3-5-sonnet-latest")
-
-if __name__ == "__main__":
-    print(f"API_KEY: {API_KEY}")
-    print(resolve_project_source())

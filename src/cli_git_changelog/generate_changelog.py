@@ -1,12 +1,10 @@
 import os
 from typing import Dict, List, Union
 from cli_git_changelog.utils.logger import get_logger
-from dotenv import load_dotenv
-import requests
 from pathlib import Path
 from datetime import datetime
 from cli_git_changelog.extract_git_commits_diff import get_git_commits
-from cli_git_changelog import API_KEY, BASE_URL, BASE_MODEL 
+from cli_git_changelog import BASE_URL
 from cli_git_changelog.model_interface.model_interface import ModelInterface
 from cli_git_changelog.formatters.changelog_prompt_formatters import build_file_change_summary_prompt, build_changelog_prompt, build_full_commit_batch_changelog_prompt
 from cli_git_changelog.model_interface import get_model
@@ -58,6 +56,8 @@ def call_ai(
 
 
 def configure_output_dirs(output_dir: Path):
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%dT%H%M%S")
     base_out = output_dir / ts
     commits_out = base_out / "commits"
