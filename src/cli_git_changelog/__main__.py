@@ -71,7 +71,7 @@ def main():
     start_time = time.time()
     create_changelog(api_key, model, wd, output_dir, n_commits, concurrency)
     end_time = time.time()
-    logger.error(f"Time taken: {end_time - start_time} seconds")
+    logger.info(f"Time taken: {end_time - start_time} seconds")
 
 if __name__ == "__main__":
     main()
