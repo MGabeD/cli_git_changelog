@@ -1,8 +1,8 @@
 import argparse
 import os
 from pathlib import Path
-
-from cli_git_changelog import BASE_MODEL, API_KEY, resolve_component_dirs_path, resolve_project_source
+from dotenv import load_dotenv
+from cli_git_changelog import BASE_MODEL, API_KEY, reload_env_vars
 from cli_git_changelog.generate_changelog import create_changelog
 from cli_git_changelog.utils.logger import get_logger
 
@@ -29,6 +29,8 @@ def parse_args():
                         help="Base output directory for changelog files")
     parser.add_argument("--quiet", action="store_true",
                         help="Quiet mode, no terminal logging")
+    parser.add_argument("--dotenv-path", type=str,
+                        help="Path to the .env file")
     return parser.parse_args()
 
 def main():
@@ -40,15 +42,16 @@ def main():
     # Mutes logging
     if args.quiet:
         os.environ["QUIET_MODE"] = "true"
-    
-    logger.info(f"API key: {args.api_key}")
-    logger.info(f"API key: {API_KEY}")
+        
+    wd = args.wd_override 
+    dotenv_path = Path(args.dotenv_path or wd + "/.env")
+    load_dotenv(dotenv_path)
+    reload_env_vars()
 
     api_key = args.api_key or API_KEY
     if not api_key:
         raise ValueError("No API key provided; set --api-key or API_KEY in env")
     model = args.model_override 
-    wd = args.wd_override 
     n_commits = args.commits 
     if any(i is None for i in [wd, model, api_key, n_commits]):
         raise ValueError("Missing required arguments")

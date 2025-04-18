@@ -96,8 +96,6 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
 
     commits_out, batch_out = configure_output_dirs(output_dir)
     commit_summaries: List[str] = []
-    foo = API_URL
-    logger.info(f"API_URL: {API_URL}")
     shas = list(commits.keys())
     LLM_model = get_model(api_url=API_URL, api_key=api_key, model=model)
     for sha in shas:
