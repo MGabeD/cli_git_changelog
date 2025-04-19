@@ -1,15 +1,21 @@
 import requests
+import time
 from typing import List
-from anthropic import Anthropic
+from anthropic import Anthropic, RateLimitError
 from cli_git_changelog.model_interface.model_interface import ModelInterface
 from cli_git_changelog.utils.logger import get_logger
 from typing import Union
+from ratelimit import limits, sleep_and_retry
 
 
 logger = get_logger(__name__)
 
 
 class AnthropicModel(ModelInterface):
+    CALLS = 50
+    PERIOD = 60
+    MAX_RETRIES = 5
+
     def __init__(self, api_url: Union[str, None] = None, api_key: Union[str, None] = None, model: Union[str, None] = None) -> None:
         if api_url is not None and len(api_url) > 0:
             logger.warning(f"Anthropic API is auto interfered, overriding api_url: {api_url}")
@@ -25,7 +31,39 @@ class AnthropicModel(ModelInterface):
             self.model = model
         self.client = Anthropic(api_key=self.api_key)
 
+
+    def rate_limit(self):
+        return [self.PERIOD * 1000 // self.CALLS, self.CALLS]
+    
+
     def call_model(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096) -> str:
+
+        rate_info = self.rate_limit() if callable(self.rate_limit) else getattr(self, 'rate_limit', None)
+
+        if rate_info and isinstance(rate_info, (list, tuple)) and len(rate_info) == 2:
+            retry_wait = max(1, rate_info[0] / 1000.0) 
+
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                return self.call_model_with_rate_limit(prompt, temperature, max_tokens)
+            except RateLimitError:
+                logger.warning(f"Rate limit hit from Anthropic API (attempt {attempt + 1}/{self.MAX_RETRIES}). Waiting {retry_wait:.1f}s...")
+                time.sleep(retry_wait)
+            except Exception as e:
+                err_msg = str(e).lower()
+                if "rate" in err_msg and "limit" in err_msg:
+                    logger.warning(f"Rate limit-like error from Anthropic: {e} (attempt {attempt + 1}/{self.MAX_RETRIES}). Waiting {retry_wait:.1f}s...")
+                    time.sleep(retry_wait)
+                else:
+                    raise 
+
+        raise RuntimeError("Exceeded max retries due to rate limiting.")
+
+
+    # Now even if I choose poor worker controls I can still handle not being rate limited
+    @sleep_and_retry
+    @limits(calls=CALLS, period=PERIOD)
+    def call_model_with_rate_limit(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096) -> str:
         if temperature is None:
             temperature = 0.5
         if max_tokens is None or max_tokens == 0:
