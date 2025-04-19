@@ -10,6 +10,9 @@ logger = get_logger(__name__)
 METADATA_PREFIXES = ("diff --git", "index ", "@@ ", "+++ ", "--- ")
 
 
+REJECT_FILE_TYPES = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".mp4", ".mp3", ".wav", ".ogg", ".webm", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".json", ".txt")
+
+
 def clean_diff(raw: str) -> str:
     cleaned = []
     for ln in raw.splitlines():
@@ -61,6 +64,9 @@ def get_git_commits(n: int, working_directory: str) -> Dict[str, Dict[str, dict]
             files = []
 
         for fpath in files:
+            if fpath.endswith(REJECT_FILE_TYPES):
+                continue
+
             try:
                 old_content = subprocess.check_output(
                     ["git", "show", f"{commit_hash}^:{fpath}"],
