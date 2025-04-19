@@ -29,6 +29,12 @@ dependencies = [
     "anthropic > 0.45, < 1.0",
 ]
 
+[project.optional-dependencies]
+
+dev = [
+    "pre-commit",
+]
+
 [project.scripts]
 generate-changelog = "cli_git_changelog.__main__:main"
 
