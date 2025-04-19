@@ -142,6 +142,9 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
             if commit_summary is not None:
                 commit_summaries.append(commit_summary)
 
+    if not disable_commit_writing:
+        logger.info(f"Wrote {len(shas)} per‑commit files to {commits_out}")
+
     if not disable_batch_writing:
         first_sha, last_sha = shas[0], shas[-1]
         batch_prompt = build_full_commit_batch_changelog_prompt(commit_summaries)
@@ -149,13 +152,13 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
         if batch_output_override is None:
             batch_file = batch_out / f"{first_sha}-{last_sha}.md"
             batch_file.write_text(batch_summary)
+            logger.info(f"Wrote batch summary to {batch_file}")
         else:
             try:
                 Path(batch_output_override).write_text(batch_summary)
+                logger.info(f"Wrote batch summary to {batch_output_override}")
             except Exception as e:
                 logger.error(f"Error writing batch file: {e}")
                 raise RuntimeError(f"Error writing batch file: {e}")
-        logger.info(f"Wrote {len(shas)} per‑commit files to {commits_out}")
-        logger.info(f"Wrote batch summary to {batch_file}")
     else:
         logger.warning("Batch writing is disabled, skipping batch file creation and model call")
