@@ -11,6 +11,7 @@ from cli_git_changelog.formatters.changelog_prompt_formatters import build_file_
 from cli_git_changelog.model_interface import get_model
 
 
+
 logger = get_logger(__name__)
 
 
