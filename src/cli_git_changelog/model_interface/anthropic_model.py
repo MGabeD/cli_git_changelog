@@ -32,30 +32,23 @@ class AnthropicModel(ModelInterface):
         self.client = Anthropic(api_key=self.api_key)
 
 
-    def rate_limit(self):
-        return [self.PERIOD * 1000 // self.CALLS, self.CALLS]
-    
-
     def call_model(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096) -> str:
-
-        rate_info = self.rate_limit() if callable(self.rate_limit) else getattr(self, 'rate_limit', None)
-
-        if rate_info and isinstance(rate_info, (list, tuple)) and len(rate_info) == 2:
-            retry_wait = max(1, rate_info[0] / 1000.0) 
-
+        base_wait = 20  # seconds
         for attempt in range(self.MAX_RETRIES):
             try:
                 return self.call_model_with_rate_limit(prompt, temperature, max_tokens)
             except RateLimitError:
-                logger.warning(f"Rate limit hit from Anthropic API (attempt {attempt + 1}/{self.MAX_RETRIES}). Waiting {retry_wait:.1f}s...")
-                time.sleep(retry_wait)
+                wait_time = base_wait * (attempt + 1)
+                logger.warn(f"Rate limit hit (attempt {attempt + 1}/{self.MAX_RETRIES}). Sleeping for {wait_time}s...")
+                time.sleep(wait_time)
             except Exception as e:
                 err_msg = str(e).lower()
                 if "rate" in err_msg and "limit" in err_msg:
-                    logger.warning(f"Rate limit-like error from Anthropic: {e} (attempt {attempt + 1}/{self.MAX_RETRIES}). Waiting {retry_wait:.1f}s...")
-                    time.sleep(retry_wait)
+                    wait_time = base_wait * (attempt + 1)
+                    logger.warn(f"Rate limit-like error: {e} (attempt {attempt + 1}/{self.MAX_RETRIES}). Sleeping for {wait_time}s...")
+                    time.sleep(wait_time)
                 else:
-                    raise 
+                    raise
 
         raise RuntimeError("Exceeded max retries due to rate limiting.")
 
@@ -79,9 +72,13 @@ class AnthropicModel(ModelInterface):
             if not res:
                 raise Exception(f"Anthropic request failed: {res}")
             return res
-
+        
+        except RateLimitError as e:
+            logger.warn(f"Anthropic rate limit hit: {e}")
+            raise
+        
         except Exception as e:
-            logger.error(f"Anthropic request failed: {e}")
+            logger.warn(f"Anthropic request failed: {e}")
             logger.warn("Falling back to raw HTTP request.")
             try:
                 headers = {

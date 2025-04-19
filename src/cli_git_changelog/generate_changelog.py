@@ -116,7 +116,6 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
         raise RuntimeError(f"Error fetching commits: {e}")
 
     commits_out, batch_out = configure_output_dirs(output_dir, disable_commit_writing, disable_batch_writing)
-    batch_out = Path(batch_output_override)
 
     commit_summaries: List[str] = []
     shas = list(commits.keys())
@@ -147,7 +146,7 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
         first_sha, last_sha = shas[0], shas[-1]
         batch_prompt = build_full_commit_batch_changelog_prompt(commit_summaries)
         batch_summary = call_model(LLM_model, batch_prompt, max_tokens=8192)
-        if batch_output_override is not None:
+        if batch_output_override is None:
             batch_file = batch_out / f"{first_sha}-{last_sha}.md"
             batch_file.write_text(batch_summary)
         else:
