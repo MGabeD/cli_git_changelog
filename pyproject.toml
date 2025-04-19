@@ -40,7 +40,7 @@ dev = [
 generate-changelog = "cli_git_changelog.__main__:main"
 
 [tool.setuptools]
-script-files = ["scripts/close_branch"]
+script-files = ["src/cli_git_changelog/scripts/close_branch"]
 
 [tool.setuptools.packages.find]
 where = ["src", "."]
@@ -51,7 +51,8 @@ include = [
 ]
 
 [tool.setuptools.package-data]
-"auto_apply_bot" = ["version.txt", "**/*.toml"]
+"cli_git_changelog.scripts" = ["close_branch.sh"]
+"cli_git_changelog" = ["version.txt", "**/*.toml"]
 
 [tool.setuptools_scm]
 write_to = "src/cli_git_changelog/version.txt"

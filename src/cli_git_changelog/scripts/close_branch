@@ -1,0 +1,3 @@
+#!/bin/bash
+REAL_PATH=$(python -c "import importlib.resources as r; print(r.files('cli_git_changelog.scripts') / 'close_branch.sh')")
+bash "$REAL_PATH" "$@"
