@@ -37,7 +37,9 @@ OUTPUT_FILE="$RELEASE_DIR/changelog_${SAFE_BRANCH_NAME}.md"
 echo "Generating AI changelog for $COMMIT_COUNT commits..."
 generate-changelog \
     -n "$COMMIT_COUNT" \
-    --batch-output-override "$OUTPUT_FILE"
+    --batch-output-override "$OUTPUT_FILE" \
+    --max-workers-per-commit 10 \
+    --max-commit-workers 10
 
 # Stage, commit, and push the changelog
 git add "$OUTPUT_FILE"
