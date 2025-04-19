@@ -108,7 +108,7 @@ def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, P
     return None
 
 
-def create_changelog(api_key: str, model: str, working_directory: str, output_dir: Path, n_commits: int, concurrency: bool, max_workers_per_commit: int, max_commit_workers: int, disable_commit_writing: bool = False, disable_batch_writing: bool = False, batch_output_override: str = None):
+def create_changelog(api_key: str, model: str, working_directory: str, output_dir: Path, n_commits: int, concurrency: bool, max_workers_per_commit: int, max_commit_workers: int, disable_commit_writing: bool = False, disable_batch_writing: bool = False, batch_output_override: Union[str, Path, None] = None):
     try:
         commits = get_git_commits(n_commits, working_directory)
     except RuntimeError as e:
@@ -116,8 +116,7 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
         raise RuntimeError(f"Error fetching commits: {e}")
 
     commits_out, batch_out = configure_output_dirs(output_dir, disable_commit_writing, disable_batch_writing)
-    if batch_output_override is not None:
-        batch_out = Path(batch_output_override)
+    batch_out = Path(batch_output_override)
 
     commit_summaries: List[str] = []
     shas = list(commits.keys())
@@ -148,8 +147,15 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
         first_sha, last_sha = shas[0], shas[-1]
         batch_prompt = build_full_commit_batch_changelog_prompt(commit_summaries)
         batch_summary = call_model(LLM_model, batch_prompt, max_tokens=8192)
-        batch_file = batch_out / f"{first_sha}-{last_sha}.md"
-        batch_file.write_text(batch_summary)
+        if batch_output_override is not None:
+            batch_file = batch_out / f"{first_sha}-{last_sha}.md"
+            batch_file.write_text(batch_summary)
+        else:
+            try:
+                Path(batch_output_override).write_text(batch_summary)
+            except Exception as e:
+                logger.error(f"Error writing batch file: {e}")
+                raise RuntimeError(f"Error writing batch file: {e}")
         logger.info(f"Wrote {len(shas)} per‑commit files to {commits_out}")
         logger.info(f"Wrote batch summary to {batch_file}")
     else:

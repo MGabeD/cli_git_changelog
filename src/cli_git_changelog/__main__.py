@@ -35,7 +35,7 @@ def parse_args():
     parser.add_argument("--disable-batch-writing", action="store_true", default=False,
                         help="Disable writing batch changelog file")
     parser.add_argument("--batch-output-override", type=str,
-                        help="Override the default batch output file name")
+                        help="Override the default batch output file, the full path to the file not just the filename or directory")
     # Create a subparser for concurrency-related arguments
     concurrency_group = parser.add_argument_group('Concurrency Options')
     concurrency_group.add_argument("--max-workers-per-commit", type=int,
