@@ -40,7 +40,7 @@ def build_file_change_prompts(commit: dict) -> List[str]:
     return prompts
 
 
-def call_ai(
+def call_model(
     model: ModelInterface,
     prompt: str,
     max_tokens: int = 4096,
@@ -68,15 +68,15 @@ def configure_output_dirs(output_dir: Path):
     return commits_out, batch_out
 
 
-def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, Path], info: dict, sha: str, concurrency: bool = False):
+def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, Path], info: dict, sha: str, concurrency: bool = False, max_workers_per_commit: int = 5):
     file_prompts = build_file_change_prompts(info)
     file_summaries: Dict[str, str] = {}
     file_paths = list(info["files"].keys())
 
     if concurrency:
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers_per_commit) as executor:
             futures = {
-                executor.submit(call_ai, LLM_model, prompt): idx
+                executor.submit(call_model, LLM_model, prompt): idx
                 for idx, prompt in enumerate(file_prompts)
             }
             for future in as_completed(futures):
@@ -90,13 +90,13 @@ def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, P
                     logger.error(f"Failed to summarize {file_paths[idx]}: {e}")
     else:
         for idx, prompt in enumerate(file_prompts):
-            summary = call_ai(LLM_model, prompt)
+            summary = call_model(LLM_model, prompt)
             if summary is not None:
                 file_summaries[file_paths[idx]] = summary
                 logger.info(f"File {file_paths[idx]} summary: {summary}")
 
     commit_prompt = build_changelog_prompt(file_summaries)
-    commit_summary = call_ai(LLM_model, commit_prompt)
+    commit_summary = call_model(LLM_model, commit_prompt)
     if commit_summary is not None:
         (commits_out / f"{sha}.md").write_text(commit_summary)
         logger.info(f"Wrote {sha} to {commits_out / f'{sha}.md'}")
@@ -104,7 +104,7 @@ def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, P
     return None
 
 
-def create_changelog(api_key: str, model: str, working_directory: str, output_dir: Path, n_commits: int, concurrency: bool):
+def create_changelog(api_key: str, model: str, working_directory: str, output_dir: Path, n_commits: int, concurrency: bool, max_workers_per_commit: int, max_commit_workers: int):
     try:
         commits = get_git_commits(n_commits, working_directory)
     except RuntimeError as e:
@@ -115,17 +115,17 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
     commit_summaries: List[str] = []
     shas = list(commits.keys())
     LLM_model = get_model(api_url=API_URL, api_key=api_key, model=model)
-    logger.warning(f"Concurrency: {concurrency}")
     if concurrency:
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        logger.warning(f"Running with concurrency: Max workers per commit: {max_workers_per_commit} & Max commit workers: {max_commit_workers}")
+        with ThreadPoolExecutor(max_workers=max_commit_workers) as executor:
             future_to_sha = {
-                executor.submit(create_commit_changelog, LLM_model, commits_out, commits[sha], sha, concurrency): sha
+                executor.submit(create_commit_changelog, LLM_model, commits_out, commits[sha], sha, concurrency, max_workers_per_commit): sha
                 for sha in shas
             }
             for future in as_completed(future_to_sha):
                 sha = future_to_sha[future]
                 try:
-                    commit_summary = future.result()  # <-- You forgot this line
+                    commit_summary = future.result()
                     if commit_summary is not None:
                         commit_summaries.append(commit_summary)
                 except Exception as e:
@@ -139,7 +139,7 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
 
     first_sha, last_sha = shas[0], shas[-1]
     batch_prompt = build_full_commit_batch_changelog_prompt(commit_summaries)
-    batch_summary = call_ai(LLM_model, batch_prompt, max_tokens=8192)
+    batch_summary = call_model(LLM_model, batch_prompt, max_tokens=8192)
 
     batch_file = batch_out / f"{first_sha}-{last_sha}.md"
     batch_file.write_text(batch_summary)

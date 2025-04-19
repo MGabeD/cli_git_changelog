@@ -12,7 +12,6 @@ def build_file_change_summary_prompt(file_name: str, full_file: str, changes: st
 
 
 def build_changelog_prompt(changes_log = Dict[str, str]) -> str:
-
     return (
         "You are a release manager. Given the following changelogs of files, build a comprehensive changelog"
         " for all of the changes in the repo done by this commit. Please include a high level summary of the changes"
