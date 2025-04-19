@@ -39,6 +39,9 @@ dev = [
 [project.scripts]
 generate-changelog = "cli_git_changelog.__main__:main"
 
+[tool.setuptools]
+script-files = ["scripts/close_branch"]
+
 [tool.setuptools.packages.find]
 where = ["src", "."]
 namespaces = true
