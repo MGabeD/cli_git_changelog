@@ -56,19 +56,21 @@ def call_model(
         return None
 
 
-def configure_output_dirs(output_dir: Path):
+def configure_output_dirs(output_dir: Path, disable_commit_writing: bool = False, disable_batch_writing: bool = False):
     if not output_dir.exists():
         output_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%dT%H%M%S")
     base_out = output_dir / ts
     commits_out = base_out / "commits"
     batch_out = base_out / "batch"
-    commits_out.mkdir(parents=True, exist_ok=True)
-    batch_out.mkdir(parents=True, exist_ok=True)
+    if not disable_commit_writing:
+        commits_out.mkdir(parents=True, exist_ok=True)
+    if not disable_batch_writing:
+        batch_out.mkdir(parents=True, exist_ok=True)
     return commits_out, batch_out
 
 
-def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, Path], info: dict, sha: str, concurrency: bool = False, max_workers_per_commit: int = 5):
+def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, Path], info: dict, sha: str, concurrency: bool = False, max_workers_per_commit: int = 5, disable_commit_writing: bool = False):
     file_prompts = build_file_change_prompts(info)
     file_summaries: Dict[str, str] = {}
     file_paths = list(info["files"].keys())
@@ -98,20 +100,25 @@ def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, P
     commit_prompt = build_changelog_prompt(file_summaries)
     commit_summary = call_model(LLM_model, commit_prompt)
     if commit_summary is not None:
-        (commits_out / f"{sha}.md").write_text(commit_summary)
-        logger.info(f"Wrote {sha} to {commits_out / f'{sha}.md'}")
+        if not disable_commit_writing:
+            (commits_out / f"{sha}.md").write_text(commit_summary)
+            logger.info(f"Wrote {sha} to {commits_out / f'{sha}.md'}")
         return commit_summary
+
     return None
 
 
-def create_changelog(api_key: str, model: str, working_directory: str, output_dir: Path, n_commits: int, concurrency: bool, max_workers_per_commit: int, max_commit_workers: int):
+def create_changelog(api_key: str, model: str, working_directory: str, output_dir: Path, n_commits: int, concurrency: bool, max_workers_per_commit: int, max_commit_workers: int, disable_commit_writing: bool = False, disable_batch_writing: bool = False, batch_output_override: str = None):
     try:
         commits = get_git_commits(n_commits, working_directory)
     except RuntimeError as e:
         logger.error(f"Error fetching commits: {e}")
         raise RuntimeError(f"Error fetching commits: {e}")
 
-    commits_out, batch_out = configure_output_dirs(output_dir)
+    commits_out, batch_out = configure_output_dirs(output_dir, disable_commit_writing, disable_batch_writing)
+    if batch_output_override is not None:
+        batch_out = Path(batch_output_override)
+
     commit_summaries: List[str] = []
     shas = list(commits.keys())
     LLM_model = get_model(api_url=API_URL, api_key=api_key, model=model)
@@ -119,7 +126,7 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
         logger.warning(f"Running with concurrency: Max workers per commit: {max_workers_per_commit} & Max commit workers: {max_commit_workers}")
         with ThreadPoolExecutor(max_workers=max_commit_workers) as executor:
             future_to_sha = {
-                executor.submit(create_commit_changelog, LLM_model, commits_out, commits[sha], sha, concurrency, max_workers_per_commit): sha
+                executor.submit(create_commit_changelog, LLM_model, commits_out, commits[sha], sha, concurrency, max_workers_per_commit, disable_commit_writing): sha
                 for sha in shas
             }
             for future in as_completed(future_to_sha):
@@ -133,15 +140,17 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
     else:
         for sha in shas:
             info = commits[sha]
-            commit_summary = create_commit_changelog(LLM_model, commits_out, info, sha)
+            commit_summary = create_commit_changelog(LLM_model, commits_out, info, sha, disable_commit_writing)
             if commit_summary is not None:
                 commit_summaries.append(commit_summary)
 
-    first_sha, last_sha = shas[0], shas[-1]
-    batch_prompt = build_full_commit_batch_changelog_prompt(commit_summaries)
-    batch_summary = call_model(LLM_model, batch_prompt, max_tokens=8192)
-
-    batch_file = batch_out / f"{first_sha}-{last_sha}.md"
-    batch_file.write_text(batch_summary)
-    logger.info(f"Wrote {len(shas)} per‑commit files to {commits_out}")
-    logger.info(f"Wrote batch summary to {batch_file}")
+    if not disable_batch_writing:
+        first_sha, last_sha = shas[0], shas[-1]
+        batch_prompt = build_full_commit_batch_changelog_prompt(commit_summaries)
+        batch_summary = call_model(LLM_model, batch_prompt, max_tokens=8192)
+        batch_file = batch_out / f"{first_sha}-{last_sha}.md"
+        batch_file.write_text(batch_summary)
+        logger.info(f"Wrote {len(shas)} per‑commit files to {commits_out}")
+        logger.info(f"Wrote batch summary to {batch_file}")
+    else:
+        logger.warning("Batch writing is disabled, skipping batch file creation and model call")

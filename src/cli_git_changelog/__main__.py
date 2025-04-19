@@ -30,7 +30,12 @@ def parse_args():
                         help="Path to the .env file")
     parser.add_argument("--disable-concurency", action="store_true",
                         help="Disable concurency")
-    
+    parser.add_argument("--disable-commit-writing", action="store_true", default=False,
+                        help="Disable writing commit messages to the changelog file")
+    parser.add_argument("--disable-batch-writing", action="store_true", default=False,
+                        help="Disable writing batch changelog file")
+    parser.add_argument("--batch-output-override", type=str,
+                        help="Override the default batch output file name")
     # Create a subparser for concurrency-related arguments
     concurrency_group = parser.add_argument_group('Concurrency Options')
     concurrency_group.add_argument("--max-workers-per-commit", type=int,
@@ -66,6 +71,9 @@ def main():
         max_workers_per_commit = 1
         max_commit_workers = 1
 
+    disable_commit_writing = args.disable_commit_writing
+    disable_batch_writing = args.disable_batch_writing
+    batch_output_override = args.batch_output_override or None
     wd = args.wd_override 
     dotenv_path = Path(args.dotenv_path or wd + "/.env")
     if args.dotenv_path is not None:
@@ -94,7 +102,7 @@ def main():
     from cli_git_changelog.generate_changelog import create_changelog
 
     start_time = time.time()
-    create_changelog(api_key, model, wd, output_dir, n_commits, concurrency, max_workers_per_commit, max_commit_workers)
+    create_changelog(api_key, model, wd, output_dir, n_commits, concurrency, max_workers_per_commit, max_commit_workers, disable_commit_writing, disable_batch_writing, batch_output_override)
     end_time = time.time()
     logger.info(f"Time taken: {end_time - start_time} seconds")
 
