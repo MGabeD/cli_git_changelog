@@ -45,8 +45,12 @@ def clamp_commits_to_branch_depth(func):
                     f"Requested {n} commits, but branch only has {total_commits}. "
                     f"Reducing to {total_commits}."
                 )
-                n = total_commits
-
+                if not args.get("commit_strategy", False):
+                    logger.warn("Since you are not using the batch strategy, manually clamping to the branch depth - 1")
+                    n = total_commits - 1
+                else:
+                    n = total_commits
+                    
         except subprocess.CalledProcessError:
             logger.error("Failed to count commits — are you in a Git repo?")
             raise
@@ -63,7 +67,4 @@ def get_git_history_configured(n: int, working_directory: str, commit_strategy: 
         return get_git_commits_diff(n, working_directory, clean_diff, reject_file_types)
     else:
         logger.info("Using batch strategy")
-        # Batch strategy is using git indexing which id 0 indexed while the looping in the function is 1 indexed 
-        # This is a design issue and will need ot be fixed if I want to expand this but since it is only 2 
-        # strategies right now it isn't worth the refactor yet
-        return get_git_batch_diff(n-1, working_directory, clean_diff, reject_file_types)
+        return get_git_batch_diff(n, working_directory, clean_diff, reject_file_types)
