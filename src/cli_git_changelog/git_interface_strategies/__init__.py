@@ -39,7 +39,6 @@ def clamp_commits_to_branch_depth(func):
                 ["git", "rev-list", "--count", "HEAD"],
                 cwd=working_directory
             ).decode().strip())
-            logger.error(f"Total commits: {total_commits}")
             if n > total_commits - (0 if kwargs.get("commit_strategy", False) else 1):
                 logger.warn(
                     f"Requested {n} commits, but branch only has {total_commits}. "

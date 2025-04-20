@@ -64,7 +64,6 @@ class AnthropicModel(ModelInterface):
 
 
     def submit_request(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096, method: Optional[Callable] = None) -> str:
-        logger.error("you should see this a bunch and close together")
         if method is None:
             method = self.query_model
         future = self.dispatcher.submit(method, prompt, temperature, max_tokens)
