@@ -14,28 +14,38 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Generate an AI‑powered, hierarchical changelog for the last N Git commits."
     )
-    parser.add_argument("-n", "--commits", type=int, default=1,
-                        help="Number of commits to summarize")
-    parser.add_argument("--wd-override", type=str, default=os.getcwd(),
-                        help="Working directory to run git commands in")
+
+    # MARK: CORE OVERRIDE ARGS
     parser.add_argument("--model-override", type=str, default=BASE_MODEL,
                         help="Override which Claude model to call")
+    parser.add_argument("--wd-override", type=str, default=os.getcwd(),
+                        help="Working directory to run git commands in")
     parser.add_argument("--api-key", type=str,
                         help="Override API key (otherwise from env)")
-    parser.add_argument("-o", "--output-dir", type=str,
-                        help="Base output directory for changelog files")
-    parser.add_argument("--quiet", action="store_true",
-                        help="Quiet mode, no terminal logging")
     parser.add_argument("--dotenv-path", type=str,
                         help="Path to the .env file")
-    parser.add_argument("--disable-concurency", action="store_true",
-                        help="Disable concurency")
+    parser.add_argument("--quiet", action="store_true",
+                        help="Quiet mode, no terminal logging")
+
+    # MARK: FUNCTIONALITY ARGS
+    parser.add_argument("-n", "--commits", type=int, default=1,
+                        help="Number of commits to summarize")
+    parser.add_argument("--commit-strategy", action="store_true", default=False,
+                        help="Use the commit strategy for fetching git history")
+
+    # MARK: OUTPUT ARGS
+    parser.add_argument("-o", "--output-dir", type=str,
+                        help="Base output directory for changelog files")
     parser.add_argument("--disable-commit-writing", action="store_true", default=False,
                         help="Disable writing commit messages to the changelog file")
     parser.add_argument("--disable-batch-writing", action="store_true", default=False,
                         help="Disable writing batch changelog file")
     parser.add_argument("--batch-output-override", type=str,
                         help="Override the default batch output file, the full path to the file not just the filename or directory")
+
+    # MARK: CONCURRENCY ARGS
+    parser.add_argument("--disable-concurency", action="store_true",
+                        help="Disable concurency")
     # Create a subparser for concurrency-related arguments
     concurrency_group = parser.add_argument_group('Concurrency Options')
     concurrency_group.add_argument("--max-workers-per-commit", type=int,
@@ -71,6 +81,7 @@ def main():
         max_workers_per_commit = 1
         max_commit_workers = 1
 
+    commit_strategy = args.commit_strategy
     disable_commit_writing = args.disable_commit_writing
     disable_batch_writing = args.disable_batch_writing
     batch_output_override = args.batch_output_override or None
@@ -102,7 +113,18 @@ def main():
     from cli_git_changelog.generate_changelog import create_changelog
 
     start_time = time.time()
-    create_changelog(api_key, model, wd, output_dir, n_commits, concurrency, max_workers_per_commit, max_commit_workers, disable_commit_writing, disable_batch_writing, batch_output_override)
+    create_changelog(api_key, 
+                     model, 
+                     wd, 
+                     output_dir, 
+                     n_commits, 
+                     concurrency, 
+                     max_workers_per_commit, 
+                     max_commit_workers,
+                     disable_commit_writing, 
+                     disable_batch_writing, 
+                     batch_output_override, 
+                     commit_strategy)
     end_time = time.time()
     logger.info(f"Time taken: {end_time - start_time} seconds")
 

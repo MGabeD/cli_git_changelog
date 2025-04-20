@@ -1,35 +1,17 @@
 import subprocess
-import sys
-from typing import Dict
+from typing import Dict, Callable
 from cli_git_changelog.utils.logger import get_logger
 
 
 logger = get_logger(__name__)
 
 
-METADATA_PREFIXES = ("diff --git", "index ", "@@ ", "+++ ", "--- ")
-
-
-REJECT_FILE_TYPES = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".mp4", ".mp3", ".wav", ".ogg", ".webm", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".json", ".txt")
-
-
-def clean_diff(raw: str) -> str:
-    cleaned = []
-    for ln in raw.splitlines():
-        # keep the actual additions / deletions / context lines
-        if ln.startswith(METADATA_PREFIXES):
-            continue
-        # Git sometimes adds this sentinel line:
-        if ln == r"\ No newline at end of file":
-            continue
-        cleaned.append(ln)
-    return "\n".join(cleaned)
-
-
-def get_git_commits(n: int, working_directory: str) -> Dict[str, Dict[str, dict]]:
+def get_git_commits_diff(n: int, working_directory: str, clean_protocol: Callable[[str],str], reject_file_types: Callable[[str],bool]) -> Dict[str, Dict[str, dict]]:
     """
     :param n: Number of commits to get
     :param working_directory: Path in which to run all git commands
+    :param clean_protocol: Function to clean the diff protocol
+    :param reject_file_types: Function to reject file types
     :return: a dict mapping the last n commits to their message and file changes:
     Dict[str (commit_hashes): Dict[str (file_paths): Tuple[str (old_content), str (diff)] && str (desc) : commit message]]:
     """
@@ -38,14 +20,14 @@ def get_git_commits(n: int, working_directory: str) -> Dict[str, Dict[str, dict]
 
     try:
         raw = subprocess.check_output(
-            ["git", "log", f"-n{n}", log_fmt, "--date=short"],
+            ["git", "log", f"-n{n}", log_fmt],
             cwd=working_directory,
             stderr=subprocess.DEVNULL,
             text=True,
         )
     except subprocess.CalledProcessError:
         logger.error("Failed to run git log; are you in a repo?")
-        sys.exit(1)
+        raise RuntimeError("Failed to run git log; are you in a repo?")
 
     for line in raw.splitlines():
         if not line.strip():
@@ -64,7 +46,7 @@ def get_git_commits(n: int, working_directory: str) -> Dict[str, Dict[str, dict]
             files = []
 
         for fpath in files:
-            if fpath.endswith(REJECT_FILE_TYPES):
+            if reject_file_types(fpath):
                 continue
 
             try:
@@ -88,7 +70,7 @@ def get_git_commits(n: int, working_directory: str) -> Dict[str, Dict[str, dict]
                     text=True,
                 )
                 try:
-                    diff = clean_diff(raw_diff)
+                    diff = clean_protocol(raw_diff)
                 except Exception as e:
                     logger.error(f"Failed to clean diff for {fpath}: {e}")
                     diff = raw_diff
