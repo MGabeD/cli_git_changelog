@@ -1,18 +1,37 @@
 import requests
 import time
-from typing import List, Callable, Optional, Union, Tuple
+from typing import List, Callable, Optional, Union, Tuple, Any
 from anthropic import Anthropic, RateLimitError
 from cli_git_changelog.model_interface.model_interface import ModelInterface
 from cli_git_changelog.utils.logger import get_logger
 from cli_git_changelog.global_rate_limited_dispatcher import RateLimitedTaskDispatcher
+from threading import Lock
+from concurrent.futures import Future
 
 
 logger = get_logger(__name__)
 
 
-class AnthropicModel(ModelInterface):
+class AnthropicAPIReliantDispatcher:
+    _instance = None
+    _lock = Lock()
     CALLS = 50
     PERIOD = 60
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:  # double-checked locking
+                    instance = super().__new__(cls)
+                    instance.dispatcher = RateLimitedTaskDispatcher(max_calls=cls.CALLS, period_sec=cls.PERIOD)
+                    cls._instance = instance
+        return cls._instance
+
+    def submit(self, method: Callable[..., Any], *args, **kwargs) -> Future:
+        return self.dispatcher.submit(method, *args, **kwargs)
+
+
+class AnthropicModel(ModelInterface):
     MAX_RETRIES = 5
 
     def __init__(self, api_url: Union[str, None] = None, api_key: Union[str, None] = None, model: Union[str, None] = None) -> None:
@@ -29,7 +48,7 @@ class AnthropicModel(ModelInterface):
         else:
             self.model = model
         self.client = Anthropic(api_key=self.api_key)
-        self.dispatcher = RateLimitedTaskDispatcher(max_calls=self.CALLS, period_sec=self.PERIOD)
+        self.dispatcher = AnthropicAPIReliantDispatcher()
 
 
     def _normalize_inputs(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096) -> Tuple[str, float, int]:
@@ -116,7 +135,7 @@ class AnthropicModel(ModelInterface):
             )
             res = "".join(block.text for block in response.content if hasattr(block, "text")).strip()
             if not res:
-                raise Exception(f"Anthropic request failed: {res}")
+                raise Exception(f"Anthropic returned empty response.")
             return res
         
         except RateLimitError as e:
@@ -124,5 +143,6 @@ class AnthropicModel(ModelInterface):
             raise
         
         except Exception as e:
-            logger.warn(f"Anthropic request failed: {e}")
+            logger.error(f"Anthropic request failed: {e}")
+            raise
             
