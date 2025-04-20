@@ -1,11 +1,10 @@
 import requests
 import time
-from typing import List
+from typing import List, Callable, Optional, Union, Tuple
 from anthropic import Anthropic, RateLimitError
 from cli_git_changelog.model_interface.model_interface import ModelInterface
 from cli_git_changelog.utils.logger import get_logger
-from typing import Union
-from ratelimit import limits, sleep_and_retry
+from cli_git_changelog.global_rate_limited_dispatcher import RateLimitedTaskDispatcher
 
 
 logger = get_logger(__name__)
@@ -30,13 +29,30 @@ class AnthropicModel(ModelInterface):
         else:
             self.model = model
         self.client = Anthropic(api_key=self.api_key)
+        self.dispatcher = RateLimitedTaskDispatcher(max_calls=self.CALLS, period_sec=self.PERIOD)
+
+
+    def _normalize_inputs(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096) -> Tuple[str, float, int]:
+        if prompt is None or len(prompt) == 0:
+            raise ValueError("Prompt is required")
+        if max_tokens is None or max_tokens == 0:
+            max_tokens = 4096
+        return prompt, temperature or 0.5, max_tokens
+
+
+    def submit_request(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096, method: Optional[Callable] = None) -> str:
+        if method is None:
+            method = self.query_model
+        future = self.dispatcher.submit(method, prompt, temperature, max_tokens)
+        return future.result()
 
 
     def call_model(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096) -> str:
+        prompt, temperature, max_tokens = self._normalize_inputs(prompt, temperature, max_tokens)
         base_wait = 20  # seconds
-        for attempt in range(self.MAX_RETRIES):
+        for attempt in range(self.MAX_RETRIES-1):
             try:
-                return self.call_model_with_rate_limit(prompt, temperature, max_tokens)
+                return self.submit_request(prompt, temperature, max_tokens)
             except RateLimitError:
                 wait_time = base_wait * (attempt + 1)
                 logger.warn(f"Rate limit hit (attempt {attempt + 1}/{self.MAX_RETRIES}). Sleeping for {wait_time}s...")
@@ -49,18 +65,48 @@ class AnthropicModel(ModelInterface):
                     time.sleep(wait_time)
                 else:
                     raise
+        try:
+            logger.warn("Falling back to raw HTTP request.")
+            return self.submit_request(prompt, temperature, max_tokens, self.query_model_requests)
+        except Exception as e:
+            logger.error(f"Anthropic request failed: {e}")
+            raise
 
-        raise RuntimeError("Exceeded max retries due to rate limiting.")
+
+    def query_model_requests(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096) -> str:
+        try:
+            headers = {
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+
+            body = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            }
+
+            try:
+                resp = requests.post(self.api_url, headers=headers, json=body, timeout=30)
+                resp.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Anthropic fallback HTTP request failed: {e}")
+                raise RuntimeError(f"Anthropic fallback HTTP request failed: {e}")
+
+            data = resp.json()
+            if "content" in data and isinstance(data["content"], List):
+                return "".join(block.get("text", "") for block in data["content"]).strip()
+
+            logger.error(f"Unexpected API response: {data}")
+            raise RuntimeError(f"Unexpected API response: {data}")
+        except Exception as e:
+            logger.error(f"Anthropic fallback HTTP request failed: {e}")
+            raise
 
 
-    # Now even if I choose poor worker controls I can still handle not being rate limited
-    @sleep_and_retry
-    @limits(calls=CALLS, period=PERIOD)
-    def call_model_with_rate_limit(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096) -> str:
-        if temperature is None:
-            temperature = 0.5
-        if max_tokens is None or max_tokens == 0:
-            max_tokens = 4096
+    def query_model(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096) -> str:
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -79,34 +125,4 @@ class AnthropicModel(ModelInterface):
         
         except Exception as e:
             logger.warn(f"Anthropic request failed: {e}")
-            logger.warn("Falling back to raw HTTP request.")
-            try:
-                headers = {
-                    "x-api-key": self.api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                }
-
-                body = {
-                    "model": self.model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": max_tokens,
-                    "temperature": temperature,
-                }
-
-                try:
-                    resp = requests.post(self.api_url, headers=headers, json=body, timeout=30)
-                    resp.raise_for_status()
-                except requests.exceptions.RequestException as e:
-                    logger.error(f"Anthropic fallback HTTP request failed: {e}")
-                    raise RuntimeError(f"Anthropic fallback HTTP request failed: {e}")
-
-                data = resp.json()
-                if "content" in data and isinstance(data["content"], List):
-                    return "".join(block.get("text", "") for block in data["content"]).strip()
-
-                logger.error(f"Unexpected API response: {data}")
-                return None
-            except Exception as e:
-                logger.error(f"Anthropic request failed: {e}")
-                return None
+            
