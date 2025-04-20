@@ -4,7 +4,7 @@ from typing import Dict, List, Union
 from cli_git_changelog.utils.logger import get_logger
 from pathlib import Path
 from datetime import datetime
-from cli_git_changelog.extract_git_commits_diff import get_git_commits
+from cli_git_changelog.git_interface_strategies import get_git_history_configured
 from cli_git_changelog import BASE_URL
 from cli_git_changelog.model_interface.model_interface import ModelInterface
 from cli_git_changelog.formatters.changelog_prompt_formatters import build_file_change_summary_prompt, build_changelog_prompt, build_full_commit_batch_changelog_prompt
@@ -108,9 +108,20 @@ def create_commit_changelog(LLM_model: ModelInterface, commits_out: Union[str, P
     return None
 
 
-def create_changelog(api_key: str, model: str, working_directory: str, output_dir: Path, n_commits: int, concurrency: bool, max_workers_per_commit: int, max_commit_workers: int, disable_commit_writing: bool = False, disable_batch_writing: bool = False, batch_output_override: Union[str, Path, None] = None):
+def create_changelog(api_key: str, 
+                     model: str, 
+                     working_directory: str, 
+                     output_dir: Path, 
+                     n_commits: int, 
+                     concurrency: bool, 
+                     max_workers_per_commit: int, 
+                     max_commit_workers: int, 
+                     disable_commit_writing: bool = False, 
+                     disable_batch_writing: bool = False, 
+                     batch_output_override: Union[str, Path, None] = None, 
+                     commit_strategy: bool = True):
     try:
-        commits = get_git_commits(n_commits, working_directory)
+        commits = get_git_history_configured(n_commits, working_directory, commit_strategy)
     except RuntimeError as e:
         logger.error(f"Error fetching commits: {e}")
         raise RuntimeError(f"Error fetching commits: {e}")
@@ -121,7 +132,11 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
     shas = list(commits.keys())
     LLM_model = get_model(api_url=API_URL, api_key=api_key, model=model)
     if concurrency:
-        logger.warning(f"Running with concurrency: Max workers per commit: {max_workers_per_commit} & Max commit workers: {max_commit_workers}")
+        if commit_strategy:
+            logger.warning(f"Running with concurrency: Max workers per commit: {max_workers_per_commit} & Max commit workers: {max_commit_workers}")
+        else:
+            logger.warning(f"Running with concurrency: Max workers per batch: {max_workers_per_commit}")
+
         with ThreadPoolExecutor(max_workers=max_commit_workers) as executor:
             future_to_sha = {
                 executor.submit(create_commit_changelog, LLM_model, commits_out, commits[sha], sha, concurrency, max_workers_per_commit, disable_commit_writing): sha
@@ -142,7 +157,7 @@ def create_changelog(api_key: str, model: str, working_directory: str, output_di
             if commit_summary is not None:
                 commit_summaries.append(commit_summary)
 
-    if not disable_commit_writing:
+    if not disable_commit_writing or not commit_strategy:
         logger.info(f"Wrote {len(shas)} per‑commit files to {commits_out}")
 
     if not disable_batch_writing:
