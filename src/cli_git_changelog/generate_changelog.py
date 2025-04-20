@@ -121,7 +121,7 @@ def create_changelog(api_key: str,
                      batch_output_override: Union[str, Path, None] = None, 
                      commit_strategy: bool = True):
     try:
-        commits = get_git_history_configured(n_commits, working_directory, commit_strategy)
+        commits = get_git_history_configured(n_commits, working_directory, commit_strategy=commit_strategy)
     except RuntimeError as e:
         logger.error(f"Error fetching commits: {e}")
         raise RuntimeError(f"Error fetching commits: {e}")

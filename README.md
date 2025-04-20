@@ -24,6 +24,7 @@ This is especially useful for:
 - **Batch Generating Changelogs**: Summarize changes across multiple commits in one go by setting -n to a number greater than 1.
 - **File-by-File Prompts**: Generates prompts for each changed file to improve clarity and traceability.
 - **Model-Backed Generation**: Uses an LLM to interpret changes in plain English.
+- **Auto Commenting Changelogs and PR Creation**: use the close-branch command in terminal and it will create a PR for your branch & create, commit, and push a changelog for the branch (v2.0.0+)
 
 ##  Installation
 
