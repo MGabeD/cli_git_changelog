@@ -1,38 +1,59 @@
 import threading
 import time
-from queue import Queue, Empty
+from queue import Queue
 from concurrent.futures import Future
-from typing import Callable, Any, Tuple, Optional
+from typing import Callable
+from cli_git_changelog.utils.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class RateLimitedTaskDispatcher:
-    def __init__(self, max_calls: int, period_sec: float, idle_timeout: float = 10.0):
+    def __init__(self, capacity: int, refill_interval: float, idle_timeout: float = 10.0):
         """
-        :param max_calls: number of allowed calls per period
-        :param period_sec: the length of the period in seconds
-        :param idle_timeout: how long to wait before auto-shutdown when queue is empty
+        :param capacity: max number of allowed calls per time window
+        :param refill_interval: how often to refill one token (e.g., 60 / 50 = 1.2s)
         """
-        self.period_per_call = period_sec / max_calls
-        self.idle_timeout = idle_timeout
-        self.queue: Queue[Tuple[Callable, Tuple[Any, ...], dict, Future]] = Queue()
-        self.worker_thread: Optional[threading.Thread] = None
-        self.lock = threading.Lock()
-        self._shutdown_event = threading.Event()
+        self.capacity = capacity
+        self.tokens = capacity
+        self.refill_interval = refill_interval
+        self.token_lock = threading.Lock()
 
-    def _start_worker_if_needed(self):
-        with self.lock:
-            if self.worker_thread is None or not self.worker_thread.is_alive():
-                self._shutdown_event.clear()
-                self.worker_thread = threading.Thread(target=self._run, daemon=True)
-                self.worker_thread.start()
+        self.queue = Queue()
+        self.idle_timeout = idle_timeout
+        self._shutdown_event = threading.Event()
+        self.dispatcher_thread = threading.Thread(target=self._run, daemon=True)
+        self.refiller_thread = threading.Thread(target=self._refill, daemon=True)
+
+        self.dispatcher_thread.start()
+        self.refiller_thread.start()
+
+    def _refill(self):
+        while not self._shutdown_event.is_set():
+            with self.token_lock:
+                if self.tokens < self.capacity:
+                    self.tokens += 1
+            time.sleep(self.refill_interval)
+
+    def _consume_token(self) -> bool:
+        with self.token_lock:
+            if self.tokens > 0:
+                self.tokens -= 1
+                return True
+            logger.warn("Rate limited, no tokens available WAITING")
+            return False
 
     def _run(self):
         while not self._shutdown_event.is_set():
             try:
                 fn, args, kwargs, future = self.queue.get(timeout=self.idle_timeout)
-            except Empty:
+            except Exception:
                 self._shutdown_event.set()
                 break
+
+            while not self._consume_token():
+                time.sleep(0.1)
 
             try:
                 result = fn(*args, **kwargs)
@@ -40,10 +61,7 @@ class RateLimitedTaskDispatcher:
             except Exception as e:
                 future.set_exception(e)
 
-            time.sleep(self.period_per_call)
-
     def submit(self, fn: Callable, *args, **kwargs) -> Future:
         future = Future()
         self.queue.put((fn, args, kwargs, future))
-        self._start_worker_if_needed()
         return future

@@ -45,7 +45,11 @@ def clamp_commits_to_branch_depth(func):
                     f"Requested {n} commits, but branch only has {total_commits}. "
                     f"Reducing to {total_commits}."
                 )
-                if not args.get("commit_strategy", False):
+                commit_strategy = kwargs.get("commit_strategy")
+                if commit_strategy is None and len(args) >= 1:
+                    commit_strategy = args[0]
+
+                if not commit_strategy:
                     logger.warn("Since you are not using the batch strategy, manually clamping to the branch depth - 1")
                     n = total_commits - 1
                 else:

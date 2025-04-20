@@ -17,14 +17,18 @@ class AnthropicAPIReliantDispatcher:
     _lock = Lock()
     CALLS = 50
     PERIOD = 60
+    REFILL_INTERVAL = PERIOD / CALLS
+
 
     def __new__(cls):
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:  # double-checked locking
                     instance = super().__new__(cls)
-                    instance.dispatcher = RateLimitedTaskDispatcher(max_calls=cls.CALLS, period_sec=cls.PERIOD)
+                    instance.dispatcher = RateLimitedTaskDispatcher(capacity=cls.CALLS, refill_interval=cls.REFILL_INTERVAL)
                     cls._instance = instance
+                    logger.info(f"Anthropic API dispatcher initialized with {cls.CALLS} calls per {cls.PERIOD} seconds.")
+                    logger.warn("This is a singleton, it will not be recreated if called again. If you see this message multiple times, something is very wrong.")
         return cls._instance
 
     def submit(self, method: Callable[..., Any], *args, **kwargs) -> Future:
@@ -36,7 +40,7 @@ class AnthropicModel(ModelInterface):
 
     def __init__(self, api_url: Union[str, None] = None, api_key: Union[str, None] = None, model: Union[str, None] = None) -> None:
         if api_url is not None and len(api_url) > 0:
-            logger.warning(f"Anthropic API is auto interfered, overriding api_url: {api_url}")
+            logger.warn(f"Anthropic API is auto interfered, overriding api_url: {api_url}")
             self.api_url = api_url
         else:
             self.api_url = "https://api.anthropic.com/v1/messages"
@@ -60,6 +64,7 @@ class AnthropicModel(ModelInterface):
 
 
     def submit_request(self, prompt: str, temperature: float = 0.5, max_tokens: int = 4096, method: Optional[Callable] = None) -> str:
+        logger.error("you should see this a bunch and close together")
         if method is None:
             method = self.query_model
         future = self.dispatcher.submit(method, prompt, temperature, max_tokens)
